@@ -1,5 +1,5 @@
 import { applyEvent, createState, normalizeEvent, sweep } from '../../shared/protocol.js';
-import type { Effect, FloorEvent, InboundEvent, WorldState } from '../../shared/protocol';
+import type { Effect, FloorEvent, InboundEvent, WorldState, WorldSummary } from '../../shared/protocol';
 
 export type ConnectionMode = 'connecting' | 'live' | 'demo' | 'offline';
 
@@ -14,6 +14,9 @@ class Store {
   state: WorldState = createState();
   mode: ConnectionMode = 'connecting';
   selected: string | null = null;
+  /** The world (organization) on screen, and every world the server knows. */
+  world: { id: string; name: string } | null = null;
+  worlds: WorldSummary[] = [];
   private listeners = new Set<Listener>();
   private effectListeners = new Set<EffectListener>();
 
@@ -47,8 +50,15 @@ class Store {
     this.emit();
   }
 
+  setWorlds(worlds: WorldSummary[], world?: { id: string; name: string } | null) {
+    this.worlds = worlds;
+    if (world !== undefined) this.world = world;
+    this.emit();
+  }
+
   replace(state: WorldState) {
     this.state = state;
+    if (this.selected && !state.agents[this.selected]) this.selected = null;
     this.emitEffects([{ kind: 'reset' }]);
     this.emit();
   }

@@ -1,9 +1,10 @@
-import type { Agent, WorldState } from '../../shared/protocol';
+import type { Agent, WorldState, WorldSummary } from '../../shared/protocol';
 import type { ConnectionMode } from '../core/store';
 import type { Anchor } from '../world/World';
 import { looksFor, shirtFor, sourceLabel, STATUS_COLORS, STATUS_LABEL, teamAccent } from '../world/palette';
 import { icon } from './icons';
 import { REPO_URL } from '../config';
+import { avatarUrl } from '../core/server';
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, html?: string) {
   const e = document.createElement(tag);
@@ -33,6 +34,7 @@ interface Tag {
   role: HTMLElement;
   dot: HTMLElement;
   activity: HTMLElement;
+  avatar: HTMLImageElement;
   key: string;
 }
 
@@ -47,6 +49,7 @@ export interface HudActions {
   frameAll(): void;
   toggleTheme(): void;
   startDemo(): void;
+  switchWorld(id: string): void;
 }
 
 const SETUP: Record<string, { title: string; steps: { label: string; code: string }[]; note: string }> = {
@@ -96,6 +99,9 @@ export class Hud {
   private modePill = el('div', 'mode');
   private demoNote = el('div', 'demo-note glass');
   private teamsDock = el('nav', 'teams glass');
+  private worldsMenu = el('nav', 'worlds glass');
+  private worldLabel = el('span', 'world-name');
+  private worldsKey = '';
   private card = el('aside', 'card glass');
   private sheet = el('div', 'sheet-wrap');
   private empty = el('div', 'empty glass');
@@ -114,7 +120,8 @@ export class Hud {
     const top = el('header', 'topbar');
     const brand = el('div', 'brand glass');
     brand.innerHTML = `<span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="brand-name">Agent Floor</span>`;
-    brand.append(this.modePill);
+    brand.append(this.worldLabel, this.modePill);
+    this.worldsMenu.setAttribute('aria-label', 'Organizations');
     const tools = el('div', 'tools glass');
     const btn = (name: Parameters<typeof icon>[0], label: string, fn: () => void) => {
       const b = el('button', 'icon-btn', icon(name)) as HTMLButtonElement;
@@ -135,7 +142,7 @@ export class Hud {
     gh.setAttribute('aria-label', 'Source on GitHub');
     gh.title = 'Source on GitHub';
     tools.append(gh);
-    top.append(brand, tools);
+    top.append(brand, this.worldsMenu, tools);
 
     this.demoNote.innerHTML = `<span>You are looking at a demo floor.</span>`;
     const connect = el('button', 'link-btn', 'Connect your agents') as HTMLButtonElement;
@@ -187,6 +194,30 @@ export class Hud {
     this.updateEmpty();
   }
 
+  /** The organization menu: one chip per world, hidden while there is only one. */
+  setWorlds(worlds: WorldSummary[], current: { id: string; name: string } | null) {
+    const list = [...worlds];
+    if (current && !list.some((w) => w.id === current.id)) list.push({ id: current.id, name: current.name, agents: 0, attention: false });
+    const key = `${current?.id}|${current?.name}|${list.map((w) => `${w.id}:${w.name}:${w.agents}:${w.attention ? 1 : 0}`).join('|')}`;
+    if (key === this.worldsKey) return;
+    this.worldsKey = key;
+    const named = current && current.id !== 'default' ? current.name : '';
+    this.worldLabel.textContent = named;
+    this.worldLabel.classList.toggle('show', Boolean(named));
+    this.worldsMenu.innerHTML = '';
+    this.worldsMenu.classList.toggle('show', list.length > 1);
+    if (list.length < 2) return;
+    for (const w of list) {
+      const active = w.id === current?.id;
+      const b = el('button', `world-chip${active ? ' active' : ''}`) as HTMLButtonElement;
+      b.type = 'button';
+      b.setAttribute('aria-pressed', String(active));
+      b.innerHTML = `<span class="world-label">${esc(w.name)}</span><span class="count">${w.agents}</span>${w.attention ? '<span class="flag" title="Someone needs attention"></span>' : ''}`;
+      b.addEventListener('click', () => this.actions.switchWorld(w.id));
+      this.worldsMenu.append(b);
+    }
+  }
+
   setHovered(id: string | null) {
     this.hovered = id;
   }
@@ -231,7 +262,7 @@ export class Hud {
       this.cardKey = '';
       return;
     }
-    const key = `${a.id}|${a.status}|${a.activity}|${a.history.length}|${a.history.at(-1)?.ts}|${Math.floor(Date.now() / 10000)}`;
+    const key = `${a.id}|${a.status}|${a.activity}|${a.avatar}|${a.history.length}|${a.history.at(-1)?.ts}|${Math.floor(Date.now() / 10000)}`;
     if (key === this.cardKey) return;
     this.cardKey = key;
     const team = s.teams[a.team];
@@ -240,10 +271,11 @@ export class Hud {
     const hist = [...a.history].reverse().slice(0, 7);
     const color = STATUS_COLORS[a.status];
     const look = looksFor(a.id);
+    const picture = a.avatar ? `<img src="${esc(avatarUrl(a.id, a.avatar))}" alt="" referrerpolicy="no-referrer" />` : '<i></i>';
 
     this.card.innerHTML = `
       <div class="card-head">
-        <span class="avatar" style="--shirt:${shirtFor(a.role)};--skin:${look.skin};--hair:${look.hair}" aria-hidden="true"><i></i></span>
+        <span class="avatar${a.avatar ? ' has-img' : ''}" style="--shirt:${shirtFor(a.role)};--skin:${look.skin};--hair:${look.hair}" aria-hidden="true">${picture}</span>
         <div class="who">
           <h2>${esc(a.name)}</h2>
           <p>${esc(a.role)} in ${esc(team?.name || a.team)}</p>
@@ -351,7 +383,7 @@ export class Hud {
 
   private makeTag(agent: Agent): Tag {
     const root = el('div', 'tag');
-    root.innerHTML = `<div class="tag-line"><span class="dot"></span><b></b><span class="role"></span></div><div class="activity"></div>`;
+    root.innerHTML = `<div class="tag-line"><img class="tag-avatar" alt="" referrerpolicy="no-referrer" hidden /><span class="dot"></span><b></b><span class="role"></span></div><div class="activity"></div>`;
     root.addEventListener('click', () => this.actions.select(agent.id));
     this.tagsLayer.append(root);
     const tag: Tag = {
@@ -360,6 +392,7 @@ export class Hud {
       role: root.querySelector('.role')!,
       dot: root.querySelector('.dot')!,
       activity: root.querySelector('.activity')!,
+      avatar: root.querySelector('.tag-avatar')!,
       key: '',
       last: { t: '', o: '', z: '', near: false, sel: false },
     };
@@ -368,9 +401,16 @@ export class Hud {
   }
 
   private updateTag(tag: Tag, a: Agent) {
-    const key = `${a.name}|${a.role}|${a.status}|${a.activity}`;
+    const key = `${a.name}|${a.role}|${a.status}|${a.activity}|${a.avatar}`;
     if (key === tag.key) return;
     tag.key = key;
+    const src = a.avatar ? avatarUrl(a.id, a.avatar) : '';
+    if (tag.avatar.dataset.src !== src) {
+      tag.avatar.dataset.src = src;
+      tag.avatar.hidden = !src;
+      if (src) tag.avatar.src = src;
+      else tag.avatar.removeAttribute('src');
+    }
     tag.name.textContent = a.name;
     tag.role.textContent = a.role.toLowerCase() === a.name.toLowerCase() ? '' : a.role;
     tag.dot.style.background = STATUS_COLORS[a.status];
