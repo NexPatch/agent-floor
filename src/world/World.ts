@@ -38,6 +38,7 @@ import { Building } from './Building';
 import { setNightGlow } from './props';
 import { applyThemeToMaterials } from './materials';
 import { prefersReducedMotion } from './motion';
+import { avatarUrl } from '../core/server';
 import { REC } from './quality';
 import { PALETTES, teamAccent, type ThemeName } from './palette';
 import { TeamRoom } from './TeamRoom';
@@ -311,6 +312,7 @@ export class World {
         s.character.setSeat(seat);
       }
       s.character.setStatus(agent.status);
+      s.character.setAvatar(agent.avatar ? avatarUrl(agent.id, agent.avatar) : '');
       if (agent.status === 'offline' && !s.leaving) this.depart(agent.id);
     }
 

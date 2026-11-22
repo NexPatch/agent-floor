@@ -1,7 +1,7 @@
 import '@fontsource-variable/geist';
 import '@fontsource-variable/geist-mono';
 import './styles.css';
-import { connect, isDemoRunning, startDemo } from './core/connection';
+import { connect, isDemoRunning, startDemo, switchWorld } from './core/connection';
 import { store } from './core/store';
 import { Hud } from './ui/hud';
 import { World } from './world/World';
@@ -13,6 +13,8 @@ if (new URLSearchParams(location.search).has('app')) {
   document.documentElement.classList.add('in-app');
   if (/Mac/.test(navigator.platform)) document.documentElement.classList.add('in-app-mac');
 }
+// ?kiosk: a wall screen or a demo. No organization menu, no tools, minimal chrome.
+if (new URLSearchParams(location.search).has('kiosk')) document.documentElement.classList.add('kiosk');
 const stage = document.createElement('div');
 stage.className = 'stage';
 app.append(stage);
@@ -62,6 +64,7 @@ async function boot() {
     startDemo: () => {
       if (!isDemoRunning()) startDemo();
     },
+    switchWorld: (id) => switchWorld(id),
   });
 
   function applyTheme(next: ThemeName, persist = false) {
@@ -91,6 +94,7 @@ async function boot() {
       world.setSelected(store.selected);
     }
     hud.setMode(store.mode);
+    hud.setWorlds(store.mode === 'demo' ? [] : store.worlds, store.mode === 'demo' ? null : store.world);
     hud.setState(store.state, store.selected);
   });
   world.onFrame = () => hud.frame(world.anchors());

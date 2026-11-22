@@ -17,12 +17,20 @@ export interface InboundEvent {
   task?: string;
   to?: string | string[];
   subagent?: { key?: string; type?: string };
+  /** The world (organization) this event belongs to: [a-z0-9-], up to 40. Defaults to `default`. */
+  world?: string;
+  /** Display name of the world, up to 80 characters. */
+  worldName?: string;
+  /** Short hash of the image posted to /avatars/<agent id>: [A-Za-z0-9], up to 64. */
+  avatar?: string;
   ts?: number;
 }
 
 export interface FloorEvent {
   type: EventType;
   ts: number;
+  world: string;
+  worldName?: string;
   agent: string;
   name?: string;
   role?: string;
@@ -35,6 +43,7 @@ export interface FloorEvent {
   tool?: string;
   text?: string;
   task?: string;
+  avatar?: string;
   to?: string[];
 }
 
@@ -61,6 +70,7 @@ export interface Agent {
   lastSeen: number;
   history: HistoryEntry[];
   boundKey?: string;
+  avatar?: string;
 }
 
 export interface Team {
@@ -85,7 +95,18 @@ export type Effect =
   | { kind: 'leave'; agent: string }
   | { kind: 'message'; from: string; to: string; text: string };
 
+/** One world as listed by GET /worlds and the stream's `worlds` frames. */
+export interface WorldSummary {
+  id: string;
+  name: string;
+  agents: number;
+  /** Someone is waiting or failed. */
+  attention: boolean;
+}
+
 export const PROTOCOL_VERSION: number;
+export const DEFAULT_WORLD: string;
+export function worldId(value: unknown): string | null;
 export const STATUSES: Status[];
 export const EVENT_TYPES: EventType[];
 export function createState(): WorldState;

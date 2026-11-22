@@ -11,6 +11,18 @@ export const EVENT_TYPES = ['join', 'status', 'tool', 'message', 'task', 'leave'
 const MAX_HISTORY = 24;
 const MAX_TEXT = 280;
 
+/** Worlds keep several floors apart on one server (one per organization). */
+export const DEFAULT_WORLD = 'default';
+const WORLD_RE = /^[a-z0-9-]{1,40}$/;
+/** An avatar is referenced by a short content hash; the image lives at /avatars/<agent id>. */
+const AVATAR_RE = /^[A-Za-z0-9]{1,64}$/;
+
+/** A world id as given, or null when it is not a valid slug. Absent means the default world. */
+export function worldId(value) {
+  if (value == null || value === '') return DEFAULT_WORLD;
+  return typeof value === 'string' && WORLD_RE.test(value) ? value : null;
+}
+
 export function createState() {
   return { teams: {}, agents: {}, seq: 0, updatedAt: 0 };
 }
@@ -43,7 +55,12 @@ export function normalizeEvent(raw, now = Date.now()) {
   if (!raw || typeof raw !== 'object') return null;
   const type = EVENT_TYPES.includes(raw.type) ? raw.type : null;
   if (!type) return null;
-  if (type === 'reset') return { type, ts: now };
+  // A world that is given must be a valid slug: dropping it silently would put
+  // the event on another organization's floor.
+  const world = worldId(raw.world);
+  if (!world) return null;
+  const worldName = clip(raw.worldName, 80);
+  if (type === 'reset') return worldName ? { type, ts: now, world, worldName } : { type, ts: now, world };
 
   const agentRaw = typeof raw.agent === 'object' && raw.agent ? raw.agent : { id: raw.agent };
   const agentId = agentRaw.id != null ? String(agentRaw.id).slice(0, 128) : null;
@@ -55,6 +72,8 @@ export function normalizeEvent(raw, now = Date.now()) {
   const ev = {
     type,
     ts: Number.isFinite(raw.ts) ? raw.ts : now,
+    world,
+    worldName,
     agent: agentId,
     name: clip(raw.name ?? agentRaw.name, 40),
     role: clip(raw.role ?? agentRaw.role, 40),
@@ -67,6 +86,7 @@ export function normalizeEvent(raw, now = Date.now()) {
     tool: clip(raw.tool, 40),
     text: clip(raw.text),
     task: clip(raw.task, 120),
+    avatar: typeof raw.avatar === 'string' && AVATAR_RE.test(raw.avatar) ? raw.avatar : undefined,
     to: undefined,
     subagent: undefined,
   };
@@ -126,6 +146,7 @@ function ensureAgent(state, ev, now) {
       lastSeen: now,
       history: [],
       boundKey: undefined,
+      avatar: ev.avatar,
     };
   } else {
     if (ev.name) agent.name = ev.name;
@@ -133,6 +154,7 @@ function ensureAgent(state, ev, now) {
     if (ev.source) agent.source = ev.source;
     if (ev.parent) agent.parent = ev.parent;
     if (ev.team && ev.team !== agent.team) agent.team = ev.team;
+    if (ev.avatar) agent.avatar = ev.avatar;
     agent.lastSeen = now;
   }
   return agent;

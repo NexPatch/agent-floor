@@ -1,16 +1,25 @@
 import { createScript } from '../../shared/demo-script.js';
-import type { Effect, FloorEvent, WorldState } from '../../shared/protocol';
+import { createState, worldId } from '../../shared/protocol.js';
+import type { Effect, FloorEvent, WorldState, WorldSummary } from '../../shared/protocol';
 import { store } from './store';
 import { DEMO_ONLY } from '../config';
+import { serverBase } from './server';
 
 const params = new URLSearchParams(location.search);
 
-/** Where the floor server lives. Same origin by default; `?server=` overrides. */
-function serverBase() {
-  const explicit = params.get('server');
-  if (explicit) return explicit.replace(/\/$/, '');
-  return '';
+/**
+ * The world (organization) asked for: `?org=<slug>`, or its alias `?world=`.
+ * Null lets the server pick (the default world, else the first one).
+ */
+function askedWorld() {
+  const raw = params.get('org') ?? params.get('world');
+  return raw ? worldId(raw) : null;
 }
+
+let chosen: string | null = askedWorld();
+let source: EventSource | null = null;
+let opened = false;
+let fallback: number | undefined;
 
 let demoTimer: number | undefined;
 let sweepTimer: number | undefined;
@@ -47,39 +56,80 @@ export function connect() {
     startDemo();
     return;
   }
-  const base = serverBase();
-  let opened = false;
   // Without a reachable server (hosted demo, floor not started) show the demo
   // after a moment, but keep retrying so a live floor takes over when it appears.
-  const fallback = window.setTimeout(() => {
+  fallback = window.setTimeout(() => {
     if (!opened) startDemo();
   }, 2200);
-
-  const open = () => {
-    const es = new EventSource(`${base}/stream`);
-    es.addEventListener('snapshot', (msg) => {
-      opened = true;
-      window.clearTimeout(fallback);
-      stopDemo();
-      const { state } = JSON.parse((msg as MessageEvent).data) as { state: WorldState };
-      store.replace(state);
-      store.setMode('live');
-    });
-    es.addEventListener('event', (msg) => {
-      if (demoRunning) return;
-      const { event, effects } = JSON.parse((msg as MessageEvent).data) as { event: FloorEvent; effects: Effect[] };
-      store.applyRemote(event, effects);
-    });
-    es.addEventListener('removed', (msg) => {
-      if (demoRunning) return;
-      store.remove((JSON.parse((msg as MessageEvent).data) as { agents: string[] }).agents);
-    });
-    es.onerror = () => {
-      if (!demoRunning && opened) store.setMode('connecting');
-      // EventSource retries on its own while the server answers with errors;
-      // if it gives up (CLOSED) we retry after a pause.
-      if (es.readyState === EventSource.CLOSED) window.setTimeout(open, 3000);
-    };
-  };
   open();
+}
+
+function open() {
+  const q = chosen ? `?world=${encodeURIComponent(chosen)}` : '';
+  const es = new EventSource(`${serverBase()}/stream${q}`);
+  source = es;
+  es.addEventListener('snapshot', (msg) => {
+    if (es !== source) return;
+    opened = true;
+    window.clearTimeout(fallback);
+    stopDemo();
+    const { state, world, worlds } = JSON.parse((msg as MessageEvent).data) as {
+      state: WorldState;
+      world?: { id: string; name: string };
+      worlds?: WorldSummary[];
+    };
+    store.replace(state);
+    store.setWorlds(worlds || [], world || null);
+    store.setMode('live');
+  });
+  es.addEventListener('event', (msg) => {
+    if (demoRunning || es !== source) return;
+    const { event, effects } = JSON.parse((msg as MessageEvent).data) as { event: FloorEvent; effects: Effect[] };
+    store.applyRemote(event, effects);
+  });
+  es.addEventListener('removed', (msg) => {
+    if (demoRunning || es !== source) return;
+    store.remove((JSON.parse((msg as MessageEvent).data) as { agents: string[] }).agents);
+  });
+  es.addEventListener('worlds', (msg) => {
+    if (demoRunning || es !== source) return;
+    const { worlds } = JSON.parse((msg as MessageEvent).data) as { worlds: WorldSummary[] };
+    store.setWorlds(worlds);
+    // Nobody picked a world and the one the server gave us is gone while
+    // others exist (an organization started posting): follow the server.
+    const current = store.world?.id;
+    if (!chosen && current && worlds.length && !worlds.some((w) => w.id === current)) reconnect();
+  });
+  es.onerror = () => {
+    if (es !== source) return;
+    if (!demoRunning && opened) store.setMode('connecting');
+    // EventSource retries on its own while the server answers with errors;
+    // if it gives up (CLOSED) we retry after a pause.
+    if (es.readyState === EventSource.CLOSED) {
+      window.setTimeout(() => {
+        if (es === source) open();
+      }, 3000);
+    }
+  };
+}
+
+function reconnect() {
+  source?.close();
+  source = null;
+  store.setMode('connecting');
+  store.replace(createState());
+  open();
+}
+
+/** Show another world: reconnect the stream to it and keep the choice in the URL (`?org=`). */
+export function switchWorld(id: string) {
+  if (demoRunning || (id === chosen && id === store.world?.id)) return;
+  chosen = id;
+  const url = new URL(location.href);
+  url.searchParams.delete('world');
+  url.searchParams.set('org', id);
+  history.replaceState(null, '', url);
+  store.select(null);
+  store.setWorlds(store.worlds, { id, name: store.worlds.find((w) => w.id === id)?.name || id });
+  reconnect();
 }

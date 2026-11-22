@@ -97,6 +97,9 @@ export class Character {
   private hop = new Spring(0, { response: 0.28, damping: 0.45 });
   private shake = 0;
   private hoverLift = new Spring(0, { response: 0.25, damping: 0.8 });
+  /** The agent's own picture as a round billboard above the head (optional). */
+  private avatar: Sprite | null = null;
+  private avatarSrc = '';
 
   mode: Mode = 'seated';
   private path: Vector3[] = [];
@@ -471,7 +474,10 @@ export class Character {
     const bs = Math.max(0.001, this.badgeScale.value);
     this.badge.scale.setScalar(bs);
     this.badge.visible = bs > 0.01;
-    this.badge.position.y = 2.02 + (1 - s) * 0.14 + hop + Math.sin(t * 3 + this.phase) * 0.04 * k;
+    const lift = (1 - s) * 0.14 + hop;
+    // With a picture above the head, the status badge floats above the picture.
+    this.badge.position.y = 2.02 + lift + (this.avatar ? 0.4 : 0) + Math.sin(t * 3 + this.phase) * 0.04 * k;
+    if (this.avatar) this.avatar.position.y = 1.98 + lift;
 
     // Rings
     this.selectScale.update(dt);
@@ -492,11 +498,65 @@ export class Character {
     this.root.visible = f > 0.02;
   }
 
+  /**
+   * Show the agent's picture above its head; an empty `src` removes it. The
+   * generated figure stays: the picture is a badge, not a new face.
+   */
+  setAvatar(src: string) {
+    if (src === this.avatarSrc) return;
+    this.avatarSrc = src;
+    this.dropAvatar();
+    if (!src) return;
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.referrerPolicy = 'no-referrer';
+    img.decoding = 'async';
+    img.onload = () => {
+      if (this.avatarSrc !== src || this.mode === 'gone') return;
+      const w = img.naturalWidth;
+      const h = img.naturalHeight;
+      if (!w || !h || w > 2048 || h > 2048) return;
+      const { ctx, texture } = makeCanvas(128, 128);
+      ctx.shadowColor = 'rgba(0,0,0,0.25)';
+      ctx.shadowBlur = 8;
+      ctx.shadowOffsetY = 2;
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(64, 62, 56, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowColor = 'transparent';
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(64, 62, 50, 0, Math.PI * 2);
+      ctx.clip();
+      const side = Math.min(w, h);
+      ctx.drawImage(img, (w - side) / 2, (h - side) / 2, side, side, 14, 12, 100, 100);
+      ctx.restore();
+      const sprite = new Sprite(new SpriteMaterial({ map: texture, depthWrite: false, transparent: true }));
+      sprite.scale.setScalar(0.42);
+      sprite.position.y = 2;
+      sprite.renderOrder = 9;
+      this.avatar = sprite;
+      this.root.add(sprite);
+    };
+    img.src = src;
+  }
+
+  private dropAvatar() {
+    if (!this.avatar) return;
+    this.avatar.material.map?.dispose();
+    this.avatar.material.dispose();
+    this.avatar.removeFromParent();
+    this.avatar = null;
+  }
+
   isSeated() {
     return this.mode === 'seated' && this.sitAmount > 0.6;
   }
 
   dispose() {
+    this.avatarSrc = '';
+    this.dropAvatar();
     this.statusMat.dispose();
     (this.selectRing.material as Material).dispose();
     this.root.removeFromParent();

@@ -429,6 +429,112 @@ button {
   box-shadow: 0 0 0 2px var(--glass-strong);
 }
 
+/* ---------------------------------------------------------------- organization menu */
+
+/* One chip per world (organization), in the middle of the top bar. Only shown
+   when the server has more than one world. */
+.worlds {
+  display: none;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  max-width: min(640px, calc(100vw - 360px));
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.worlds.show {
+  display: flex;
+  animation: rise 500ms var(--ease-out) both;
+}
+
+.worlds::-webkit-scrollbar {
+  display: none;
+}
+
+.world-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 12px 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+  font-weight: 550;
+  font-size: 13.5px;
+  transition: background-color 160ms ease, transform 120ms ease-out;
+}
+
+.world-chip:hover {
+  background: var(--fill);
+}
+
+.world-chip:active {
+  transform: scale(0.97);
+}
+
+.world-chip.active {
+  background: var(--text);
+  color: var(--bg, #fff);
+}
+
+.world-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.world-chip .count {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--fill-2);
+  color: inherit;
+  opacity: 0.8;
+  font: 600 11.5px/1 'Geist Mono Variable', ui-monospace, monospace;
+}
+
+.world-chip .flag {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #f5a524;
+  box-shadow: 0 0 0 2px var(--glass-strong);
+}
+
+/* The organization's name next to the brand, for kiosk screens. */
+.world-name {
+  display: none;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-2);
+}
+
+.kiosk .world-name.show {
+  display: inline;
+}
+
+/* ---------------------------------------------------------------- kiosk */
+
+/* ?kiosk: a wall screen or a demo. The floor, the brand and the offices only. */
+.kiosk .worlds,
+.kiosk .tools,
+.kiosk .hint,
+.kiosk .demo-note,
+.kiosk .empty .row {
+  display: none !important;
+}
+
 /* ---------------------------------------------------------------- hint */
 
 @media (max-width: 1180px) {
@@ -486,6 +592,19 @@ button {
 .tag-line .role {
   color: var(--text-2);
   font-weight: 500;
+}
+
+.tag-line .tag-avatar {
+  width: 18px;
+  height: 18px;
+  margin-left: -4px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex: none;
+}
+
+.tag-line .tag-avatar[hidden] {
+  display: none;
 }
 
 .tag-line .dot {
@@ -633,6 +752,18 @@ button {
   background: var(--shirt);
   overflow: hidden;
   flex: none;
+}
+
+.avatar img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.avatar.has-img::before {
+  display: none;
 }
 
 .avatar::before {
@@ -1035,6 +1166,10 @@ button {
 @media (max-width: 767px) {
   .brand-name {
     display: none;
+  }
+
+  .worlds {
+    max-width: max(120px, calc(100vw - 300px));
   }
 
   .hint {
